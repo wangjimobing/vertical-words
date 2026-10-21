@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>混合语言竖排 · 精准翻页版</title>
+<title>混合语言竖排 · 标点版</title>
 <style>
   body {
     margin: 0;
@@ -24,7 +24,6 @@
     height: 100vh;
   }
   
-  /* 文本框与上传按钮的布局 */
   .input-area {
     position: relative;
     margin-bottom: 10px;
@@ -33,7 +32,7 @@
     width: 100%;
     height: 80px;
     padding: 10px;
-    padding-bottom: 35px; /* 给底部的上传按钮留出空间 */
+    padding-bottom: 35px;
     font-size: 16px;
     box-sizing: border-box;
     border-radius: 8px;
@@ -41,7 +40,6 @@
     resize: none;
   }
   
-  /* 上传按钮伪装成文字，放在右下角 */
   .upload-btn {
     position: absolute;
     bottom: 8px;
@@ -148,7 +146,6 @@
     opacity: 0.4;
   }
   
-  /* 跳转输入框样式 */
   .page-jump {
     display: flex;
     align-items: center;
@@ -176,7 +173,6 @@
 <body>
 <div class="wrap">
   
-  <!-- 文本输入区 -->
   <div class="input-area">
     <textarea id="input" placeholder="输入任意语言，或上传 TXT..."></textarea>
     <label class="upload-btn">
@@ -210,7 +206,6 @@
     <div id="output"></div>
   </div>
 
-  <!-- 翻页控制区 -->
   <div class="pagination">
     <button id="btnPrev" disabled>上一页</button>
     <div class="page-jump">
@@ -225,12 +220,13 @@
   let allItems = [];
   let currentPage = 0;
 
-  // 混合语言终极分词逻辑
+  // 混合语言分词逻辑（已恢复标点）
   function segmentText(text) {
     const isSplitLetter = document.getElementById('splitLetter').checked;
 
     if (isSplitLetter) {
-      return Array.from(text).filter(ch => /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0600-\u06FFa-zA-Z0-9]/.test(ch));
+      // 强制拆模式：保留所有非空白的字符（包括字母、单字、标点）
+      return Array.from(text).filter(ch => !/\s/.test(ch));
     }
 
     let items = [];
@@ -239,31 +235,34 @@
       try {
         const seg = new Intl.Segmenter('und', { granularity: 'word' });
         for (const s of seg.segment(text)) {
-          if (s.isWordLike) {
-            const word = s.segment;
-            if (/^[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+$/.test(word)) {
-              items.push(...Array.from(word));
-            } else {
-              items.push(word);
-            }
+          const chunk = s.segment;
+          // 只跳过纯粹的空白字符（如空格、换行）
+          if (chunk.trim() === '') continue;
+          
+          // 如果是纯中文/日文/韩文，拆成单字
+          if (/^[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+$/.test(chunk)) {
+            items.push(...Array.from(chunk));
+          } else {
+            // 英文单词、标点等，整体保留
+            items.push(chunk);
           }
         }
         if (items.length > 0) return items;
       } catch (e) {}
     }
 
-    const regex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0600-\u06FF]|[a-zA-ZÀ-ÿ0-9]+/g;
+    // 兜底正则：匹配汉字/日韩/单词 或者 标点符号
+    const regex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]|[a-zA-ZÀ-ÿ0-9]+|[^\s\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\w]/g;
     return (text.match(regex) || []).filter(Boolean);
   }
 
   function updateData() {
     const text = document.getElementById('input').value;
     allItems = segmentText(text);
-    currentPage = 0; // 重新输入时回到第一页
+    currentPage = 0;
     renderPage();
   }
 
-  // 渲染当前页
   function renderPage() {
     const colsPerPage = parseInt(document.getElementById('colsPerPage').value, 10) || 3;
     const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
@@ -291,7 +290,6 @@
       out.appendChild(col);
     }
 
-    // 更新底部状态与输入框
     const pageInput = document.getElementById('pageInput');
     pageInput.value = currentPage + 1;
     pageInput.max = totalPages;
@@ -301,14 +299,12 @@
     document.getElementById('btnNext').disabled = currentPage === totalPages - 1;
   }
 
-  // 精准跳转逻辑
   function jumpToPage() {
     const colsPerPage = parseInt(document.getElementById('colsPerPage').value, 10) || 3;
     const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
     const totalPages = Math.max(1, Math.ceil(allItems.length / (colCapacity * colsPerPage)));
     
     let target = parseInt(document.getElementById('pageInput').value, 10);
-    
     if (isNaN(target) || target < 1) target = 1;
     if (target > totalPages) target = totalPages;
     
@@ -320,33 +316,24 @@
     }
   }
 
-  // 输入防抖
   let debounceTimer;
   document.getElementById('input').addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(updateData, 300);
   });
 
-  // ===== 新增：读取 TXT 文件 =====
   document.getElementById('fileInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = function(event) {
-      // 将读取的内容填入输入框
       document.getElementById('input').value = event.target.result;
-      // 立即执行拆分和渲染
       updateData();
     };
-    // 读取为文本，默认 UTF-8 编码
     reader.readAsText(file, 'UTF-8');
-    
-    // 清空 value，以便下次可以重新上传同一个文件
     e.target.value = '';
   });
 
-  // 绑定其他控件事件
   document.getElementById('colsPerPage').addEventListener('change', updateData);
   document.getElementById('perCol').addEventListener('change', updateData);
   document.getElementById('splitLetter').addEventListener('change', updateData);
