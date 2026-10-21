@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>混合语言竖排 · 翻页版</title>
+<title>混合语言竖排 · 精准翻页版</title>
 <style>
   body {
     margin: 0;
@@ -88,7 +88,7 @@
     flex-direction: row-reverse;
     justify-content: center;
     align-items: flex-start;
-    gap: 20px;
+    gap: 24px;
     width: 100%;
     height: 100%;
     max-height: 55vh;
@@ -101,7 +101,7 @@
     gap: 12px;
     font-size: 22px;
     line-height: 1.3;
-    max-width: 20vw; /* 防止长单词撑爆列宽 */
+    max-width: 22vw;
   }
   .column div {
     text-align: center;
@@ -125,27 +125,54 @@
   .pagination button:disabled {
     opacity: 0.4;
   }
-  .page-info {
+  
+  /* 跳转输入框样式 */
+  .page-jump {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 15px;
     color: #666;
+  }
+  #pageInput {
+    width: 50px;
+    padding: 6px;
+    text-align: center;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    outline: none;
+    background: #fff;
+  }
+  /* 隐藏数字输入框自带的上下小箭头 */
+  #pageInput::-webkit-outer-spin-button,
+  #pageInput::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <textarea id="input" placeholder="输入任意语言，例如：Hello 世界，Bonjour 朋友！..."></textarea>
+  <textarea id="input" placeholder="输入任意语言，例如：Hello World! 你好世界。مرحبا بالعالم"></textarea>
 
   <div class="controls">
+    <select id="colsPerPage">
+      <option value="3" selected>每页 3 列</option>
+      <option value="5">每页 5 列</option>
+      <option value="6">每页 6 列</option>
+      <option value="7">每页 7 列</option>
+    </select>
+
     <select id="perCol">
-      <option value="5">每列 5 个</option>
+      <option value="5" selected>每列 5 个</option>
       <option value="4">每列 4 个</option>
       <option value="6">每列 6 个</option>
       <option value="7">每列 7 个</option>
     </select>
 
-    <!-- 外文是否强制按字母拆分 -->
     <label>
-      <input type="checkbox" id="splitLetter"> 纯外文按字母拆
+      <input type="checkbox" id="splitLetter"> 外文按字母拆
     </label>
   </div>
 
@@ -153,9 +180,13 @@
     <div id="output"></div>
   </div>
 
+  <!-- 翻页控制区（加入了输入跳转） -->
   <div class="pagination">
     <button id="btnPrev" disabled>上一页</button>
-    <span class="page-info" id="pageInfo">第 1 / 1 页</span>
+    <div class="page-jump">
+      <input type="number" id="pageInput" min="1" value="1">
+      <span id="totalPagesText">/ 1 页</span>
+    </div>
     <button id="btnNext" disabled>下一页</button>
   </div>
 </div>
@@ -163,29 +194,38 @@
 <script>
   let allItems = [];
   let currentPage = 0;
-  const COLUMNS_PER_PAGE = 4; 
 
   // 混合语言终极分词逻辑
   function segmentText(text) {
     const isSplitLetter = document.getElementById('splitLetter').checked;
 
     if (isSplitLetter) {
-      // 【强制字母模式】提取所有中日韩单字、单个外文字母、数字
-      return Array.from(text).filter(ch => /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\w]/.test(ch));
+      return Array.from(text).filter(ch => /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0600-\u06FFa-zA-Z0-9]/.test(ch));
     }
 
-    // 【智能混合模式】
-    // 正则说明：
-    // [\u4e00-\u9fa5...] 匹配单个中日韩文字
-    // | 或者
-    // [a-zA-ZÀ-ÿ0-9]+ 匹配连续的英文字母（包含带重音的法德文字母）和数字
-    const regex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]|[a-zA-ZÀ-ÿ0-9]+/g;
-    
-    // 执行匹配，过滤掉 null，保证数组干净
+    let items = [];
+
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      try {
+        const seg = new Intl.Segmenter('und', { granularity: 'word' });
+        for (const s of seg.segment(text)) {
+          if (s.isWordLike) {
+            const word = s.segment;
+            if (/^[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+$/.test(word)) {
+              items.push(...Array.from(word));
+            } else {
+              items.push(word);
+            }
+          }
+        }
+        if (items.length > 0) return items;
+      } catch (e) {}
+    }
+
+    const regex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0600-\u06FF]|[a-zA-ZÀ-ÿ0-9]+/g;
     return (text.match(regex) || []).filter(Boolean);
   }
 
-  // 更新数据
   function updateData() {
     const text = document.getElementById('input').value;
     allItems = segmentText(text);
@@ -195,8 +235,10 @@
 
   // 渲染当前页
   function renderPage() {
+    const colsPerPage = parseInt(document.getElementById('colsPerPage').value, 10) || 3;
     const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
-    const itemsPerPage = colCapacity * COLUMNS_PER_PAGE; 
+    
+    const itemsPerPage = colCapacity * colsPerPage; 
     const totalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
 
     if (currentPage >= totalPages) currentPage = totalPages - 1;
@@ -208,7 +250,6 @@
     const out = document.getElementById('output');
     out.innerHTML = '';
 
-    // 渲染列（从右到左）
     for (let i = 0; i < pageItems.length; i += colCapacity) {
       const col = document.createElement('div');
       col.className = 'column';
@@ -220,24 +261,68 @@
       out.appendChild(col);
     }
 
-    // 更新底部状态
-    document.getElementById('pageInfo').textContent = `第 ${currentPage + 1} / ${totalPages} 页`;
+    // 更新底部状态与输入框
+    const pageInput = document.getElementById('pageInput');
+    pageInput.value = currentPage + 1;
+    pageInput.max = totalPages;
+    document.getElementById('totalPagesText').textContent = `/ ${totalPages} 页`;
+    
     document.getElementById('btnPrev').disabled = currentPage === 0;
     document.getElementById('btnNext').disabled = currentPage === totalPages - 1;
   }
 
-  // 绑定事件
-  document.getElementById('input').addEventListener('input', updateData);
+  // 精准跳转逻辑
+  function jumpToPage() {
+    const colsPerPage = parseInt(document.getElementById('colsPerPage').value, 10) || 3;
+    const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
+    const totalPages = Math.max(1, Math.ceil(allItems.length / (colCapacity * colsPerPage)));
+    
+    let target = parseInt(document.getElementById('pageInput').value, 10);
+    
+    // 容错处理：如果没输入、输入了非数字或超出范围，就修正
+    if (isNaN(target) || target < 1) target = 1;
+    if (target > totalPages) target = totalPages;
+    
+    if (target !== currentPage + 1) {
+      currentPage = target - 1;
+      renderPage();
+    } else {
+      // 如果输入无效，重置为当前实际页码
+      document.getElementById('pageInput').value = currentPage + 1;
+    }
+  }
+
+  // 输入防抖（300ms）：防止打字时卡顿
+  let debounceTimer;
+  document.getElementById('input').addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(updateData, 300);
+  });
+
+  // 绑定其他控件事件
+  document.getElementById('colsPerPage').addEventListener('change', updateData);
   document.getElementById('perCol').addEventListener('change', updateData);
   document.getElementById('splitLetter').addEventListener('change', updateData);
 
+  // 绑定输入框跳转事件
+  const pageInputEl = document.getElementById('pageInput');
+  pageInputEl.addEventListener('change', jumpToPage); // 失去焦点时触发
+  pageInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      jumpToPage();
+      e.target.blur(); // 回车后收起手机键盘
+    }
+  });
+
+  // 绑定前后翻页
   document.getElementById('btnPrev').addEventListener('click', () => {
     if (currentPage > 0) { currentPage--; renderPage(); }
   });
 
   document.getElementById('btnNext').addEventListener('click', () => {
+    const colsPerPage = parseInt(document.getElementById('colsPerPage').value, 10) || 3;
     const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
-    const totalPages = Math.ceil(allItems.length / (colCapacity * COLUMNS_PER_PAGE));
+    const totalPages = Math.ceil(allItems.length / (colCapacity * colsPerPage));
     if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
   });
 </script>
