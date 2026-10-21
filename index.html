@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多语言竖排 · 翻页款</title>
+<title>多语言竖排 · 翻页版</title>
 <style>
   body {
     margin: 0;
@@ -32,17 +32,19 @@
     border-radius: 8px;
     border: 1px solid #ccc;
     resize: none;
+    margin-bottom: 10px;
   }
   .controls {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
     justify-content: center;
-    margin: 10px 0;
+    align-items: center;
+    margin-bottom: 10px;
   }
-  select, button {
-    padding: 8px 12px;
-    font-size: 15px;
+  select, button, label {
+    padding: 6px 10px;
+    font-size: 14px;
     border-radius: 6px;
     border: 1px solid #ccc;
   }
@@ -52,8 +54,21 @@
     border: none;
     cursor: pointer;
   }
-  
-  /* 看书区域（固定高度，内容变化时不撑开页面） */
+  label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 书本区域 */
   .book-container {
     flex: 1;
     background: white;
@@ -67,27 +82,33 @@
     position: relative;
   }
 
-  /* 核心排版：从右往左，居中 */
+  /* 从右向左排版，单词防溢出 */
   #output {
     display: flex;
     flex-direction: row-reverse;
     justify-content: center;
     align-items: flex-start;
-    gap: 30px;
+    gap: 24px;
     width: 100%;
     height: 100%;
-    max-height: 50vh;
+    max-height: 55vh;
     overflow: hidden;
   }
   .column {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    font-size: 24px;
-    line-height: 1.2;
+    gap: 10px;
+    font-size: 22px;
+    line-height: 1.3;
   }
-  .column div { white-space: nowrap; }
+  .column div {
+    white-space: nowrap;
+    /* 如果外文单词实在太长，强制在列内折行，不会撑爆屏幕 */
+    max-width: 80vw; 
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
 
   /* 翻页控制区 */
   .pagination {
@@ -113,23 +134,26 @@
 </head>
 <body>
 <div class="wrap">
-  <textarea id="input" placeholder="输入文字，每页4列，自动分页..."></textarea>
+  <textarea id="input" placeholder="输入文字..."></textarea>
 
   <div class="controls">
     <select id="lang">
       <option value="auto">自动检测</option>
-      <option value="zh">中文（单字）</option>
-      <option value="en">英/法/德/西（按词）</option>
-      <option value="ja">日语</option>
-      <option value="ko">韩语</option>
+      <option value="zh">中文/日文</option>
+      <option value="en">外文（英/法/德等）</option>
     </select>
 
     <select id="perCol">
-      <option value="5">每列 5 个</option>
-      <option value="6">每列 6 个</option>
-      <option value="7">每列 7 个</option>
-      <option value="8">每列 8 个</option>
+      <option value="5">中文一列 5 字</option>
+      <option value="6">中文一列 6 字</option>
+      <option value="7">中文一列 7 字</option>
+      <option value="8">中文一列 8 字</option>
     </select>
+
+    <!-- 新增选项：外文是否按字母拆分 -->
+    <label>
+      <input type="checkbox" id="splitLetter"> 外文按字母拆分
+    </label>
   </div>
 
   <!-- 书本区域 -->
@@ -146,26 +170,30 @@
 </div>
 
 <script>
-  // 全局变量记录状态
-  let allWords = [];
+  let allItems = [];
   let currentPage = 0;
-  const COLUMNS_PER_PAGE = 4; // 每页显示 4 列（可根据需要修改）
+  let currentLang = 'zh';
+  const COLUMNS_PER_PAGE = 4; // 每页固定显示 4 列（可在代码里改）
 
   function detectLang(text) {
-    if (/[\u3040-\u30ff]/.test(text)) return 'ja';
-    if (/[\uac00-\ud7af]/.test(text)) return 'ko';
-    if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+    if (/[\u3040-\u30ff\u4e00-\u9fff]/.test(text)) return 'zh';
     return 'en';
   }
 
-  function segmentWords(text, lang) {
-    if (lang === 'zh') {
-      return Array.from(text).filter(ch => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(ch));
+  // 核心分词逻辑
+  function segmentText(text, lang) {
+    const isSplitLetter = document.getElementById('splitLetter').checked;
+
+    // 中文/日文，或者勾选了“外文按字母拆分”
+    if (lang === 'zh' || isSplitLetter) {
+      // 提取所有字母、数字、汉字，过滤掉标点符号
+      return Array.from(text).filter(ch => /[\u4e00-\u9fa5\u3040-\u30ffa-zA-Z0-9]/.test(ch));
     }
-    const locale = lang === 'ja' ? 'ja' : (lang === 'ko' ? 'ko' : 'en');
+
+    // 外文按单词拆分
     if (typeof Intl !== 'undefined' && Intl.Segmenter) {
       try {
-        const seg = new Intl.Segmenter(locale, { granularity: 'word' });
+        const seg = new Intl.Segmenter('en', { granularity: 'word' });
         const words = [];
         for (const s of seg.segment(text)) {
           if (s.isWordLike) words.push(s.segment);
@@ -176,47 +204,55 @@
     return text.split(/\s+/).filter(Boolean);
   }
 
-  // 初始化/更新数据
+  // 更新数据
   function updateData() {
     const text = document.getElementById('input').value;
     let lang = document.getElementById('lang').value;
-    if (lang === 'auto') lang = detectLang(text);
+    if (lang === 'auto') {
+      lang = detectLang(text);
+    }
+    currentLang = lang;
 
-    allWords = segmentWords(text, lang);
+    allItems = segmentText(text, lang);
     currentPage = 0; // 重新输入时回到第一页
     renderPage();
   }
 
   // 渲染当前页
   function renderPage() {
-    const perCol = parseInt(document.getElementById('perCol').value, 10) || 5;
-    const itemsPerPage = perCol * COLUMNS_PER_PAGE; // 一页显示的词数 = 列数 * 每列词数
-    
-    const totalPages = Math.max(1, Math.ceil(allWords.length / itemsPerPage));
-    
-    // 安全检查
+    const isSplitLetter = document.getElementById('splitLetter').checked;
+    let colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
+
+    // 【核心规则】如果是外文，且没有勾选“按字母拆分”，那么一列只能放 1 个单词
+    if (currentLang === 'en' && !isSplitLetter) {
+      colCapacity = 1; 
+    }
+
+    const itemsPerPage = colCapacity * COLUMNS_PER_PAGE; // 一页总容量
+    const totalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
+
     if (currentPage >= totalPages) currentPage = totalPages - 1;
     if (currentPage < 0) currentPage = 0;
 
     const startIdx = currentPage * itemsPerPage;
-    const pageWords = allWords.slice(startIdx, startIdx + itemsPerPage);
+    const pageItems = allItems.slice(startIdx, startIdx + itemsPerPage);
 
     const out = document.getElementById('output');
     out.innerHTML = '';
 
-    // 渲染这一页的列（从右到左）
-    for (let i = 0; i < pageWords.length; i += perCol) {
+    // 渲染列（从右到左）
+    for (let i = 0; i < pageItems.length; i += colCapacity) {
       const col = document.createElement('div');
       col.className = 'column';
-      pageWords.slice(i, i + perCol).forEach(w => {
+      pageItems.slice(i, i + colCapacity).forEach(item => {
         const d = document.createElement('div');
-        d.textContent = w;
+        d.textContent = item;
         col.appendChild(d);
       });
       out.appendChild(col);
     }
 
-    // 更新底部按钮和页码状态
+    // 更新底部状态
     document.getElementById('pageInfo').textContent = `第 ${currentPage + 1} / ${totalPages} 页`;
     document.getElementById('btnPrev').disabled = currentPage === 0;
     document.getElementById('btnNext').disabled = currentPage === totalPages - 1;
@@ -226,21 +262,20 @@
   document.getElementById('input').addEventListener('input', updateData);
   document.getElementById('lang').addEventListener('change', updateData);
   document.getElementById('perCol').addEventListener('change', updateData);
+  document.getElementById('splitLetter').addEventListener('change', updateData);
 
   document.getElementById('btnPrev').addEventListener('click', () => {
-    if (currentPage > 0) {
-      currentPage--;
-      renderPage();
-    }
+    if (currentPage > 0) { currentPage--; renderPage(); }
   });
 
   document.getElementById('btnNext').addEventListener('click', () => {
-    const perCol = parseInt(document.getElementById('perCol').value, 10) || 5;
-    const totalPages = Math.ceil(allWords.length / (perCol * COLUMNS_PER_PAGE));
-    if (currentPage < totalPages - 1) {
-      currentPage++;
-      renderPage();
-    }
+    // 翻页时重新计算，确保 totalPages 是最新的
+    const isSplitLetter = document.getElementById('splitLetter').checked;
+    let colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
+    if (currentLang === 'en' && !isSplitLetter) colCapacity = 1;
+
+    const totalPages = Math.ceil(allItems.length / (colCapacity * COLUMNS_PER_PAGE));
+    if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
   });
 </script>
 </body>
