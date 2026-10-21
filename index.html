@@ -3,106 +3,183 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>竖排文字</title>
+<title>多语言竖排 · 右起</title>
 <style>
   body {
     margin: 0;
     min-height: 100vh;
     background: #fafafa;
-    font-family: -apple-system, "PingFang SC", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Hiragino Sans", "Noto Sans CJK SC",
+      "Microsoft YaHei", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
   .wrap {
     width: 100%;
-    max-width: 600px;
+    max-width: 900px;
     padding: 16px;
     box-sizing: border-box;
   }
+  h2 { margin: 8px 0 12px; font-size: 20px; text-align: center; }
   textarea {
     width: 100%;
-    height: 100px;
+    height: 90px;
     padding: 10px;
     font-size: 16px;
     box-sizing: border-box;
-    margin-bottom: 10px;
-    border: 1px solid #ccc;
     border-radius: 8px;
+    border: 1px solid #ccc;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 12px 0;
+  }
+  select, button { 
+    padding: 8px 12px; 
+    font-size: 15px; 
+    border-radius: 6px; 
+    border: 1px solid #ccc;
   }
   button {
-    width: 100%;
-    padding: 12px;
-    font-size: 16px;
     background: #007aff;
     color: white;
     border: none;
-    border-radius: 8px;
-    margin-bottom: 20px;
   }
-  /* 从右往左的列布局 */
+  /* 核心：列从右往左，列内从上到下，整体居中 */
   #output {
     display: flex;
-    flex-direction: row-reverse; 
+    flex-direction: row-reverse; /* 第一列在最右 */
     flex-wrap: wrap;
-    justify-content: center; /* 整体居中 */
+    justify-content: center;     /* 整组列居中 */
     align-items: flex-start;
-    gap: 20px;
-    padding: 10px;
-    min-height: 200px;
-    border: 1px dashed #ccc;
-    border-radius: 8px;
+    gap: 28px;
+    width: 100%;
+    min-height: 120px;
+    padding: 16px 0;
+    box-sizing: border-box;
+    overflow-x: auto;
   }
-  /* 每一列从上往下 */
   .column {
     display: flex;
-    flex-direction: column; 
-    align-items: center;
-    gap: 8px;
-    font-size: 24px;
-    line-height: 1.4;
+    flex-direction: column;
+    align-items: center;         /* 列内字/词居中 */
+    gap: 10px;
+    font-size: 22px;
+    line-height: 1.35;
   }
+  .column div { white-space: nowrap; }
+  .empty { color: #999; font-size: 16px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <textarea id="input" placeholder="输入中文或英文..."></textarea>
-  <button onclick="render()">生成竖排</button>
+  <h2>多语言竖排 · 从右往左</h2>
+
+  <textarea id="input" placeholder="输入中文、English、français、Deutsch、日本語..."></textarea>
+
+  <div class="controls">
+    <select id="lang">
+      <option value="auto">自动检测</option>
+      <option value="zh">中文（按单字）</option>
+      <option value="ja">日语</option>
+      <option value="ko">韩语</option>
+      <option value="en">英语</option>
+      <option value="fr">法语</option>
+      <option value="de">德语</option>
+      <option value="es">西班牙语</option>
+      <option value="la">拉丁语</option>
+    </select>
+
+    <select id="perCol">
+      <option value="5">每列 5 个</option>
+      <option value="4">每列 4 个</option>
+      <option value="6">每列 6 个</option>
+      <option value="8">每列 8 个</option>
+      <option value="1">每列 1 个</option>
+    </select>
+
+    <button id="btn">转换</button>
+  </div>
+
   <div id="output"></div>
 </div>
 
 <script>
-function render() {
-  const text = document.getElementById('input').value.trim();
-  const out = document.getElementById('output');
-  out.innerHTML = '';
+  const langMap = {
+    zh: 'zh', ja: 'ja', ko: 'ko', en: 'en',
+    fr: 'fr', de: 'de', es: 'es', la: 'en'
+  };
 
-  if (!text) return;
-
-  let items = [];
-  
-  // 包含中文/日文就按单字拆，否则按空格拆词
-  if (/[\u4e00-\u9fa5\u3040-\u30ff]/.test(text)) {
-    // 中文/日文：去掉标点和空格，按单字拆分
-    items = Array.from(text).filter(ch => /[\u4e00-\u9fa5\u3040-\u30ff\w]/.test(ch));
-  } else {
-    // 英文等：按空格拆词
-    items = text.split(/\s+/).filter(Boolean);
+  function detectLang(text) {
+    if (/[\u3040-\u30ff]/.test(text)) return 'ja';
+    if (/[\uac00-\ud7af]/.test(text)) return 'ko';
+    if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+    return 'en';
   }
 
-  // 每列放 5 个字/词，可自己修改这个数字
-  const perCol = 5; 
-  for (let i = 0; i < items.length; i += perCol) {
-    const col = document.createElement('div');
-    col.className = 'column';
-    items.slice(i, i + perCol).forEach(item => {
-      const div = document.createElement('div');
-      div.textContent = item;
-      col.appendChild(div);
-    });
-    out.appendChild(col);
+  function segmentWords(text, lang) {
+    // 【核心修改点】如果是中文，直接按单字拆分，过滤掉标点空格
+    if (lang === 'zh') {
+      return Array.from(text).filter(ch => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(ch));
+    }
+
+    const locale = langMap[lang] || 'en';
+
+    // 其他语言保持上一版的智能分词（按词）
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      try {
+        const seg = new Intl.Segmenter(locale, { granularity: 'word' });
+        const words = [];
+        for (const s of seg.segment(text)) {
+          if (s.isWordLike) words.push(s.segment);
+        }
+        if (words.length) return words;
+      } catch (e) {}
+    }
+
+    // 兜底
+    if (lang === 'ja') {
+      return Array.from(text).filter(ch => /[\p{L}\p{N}]/u.test(ch));
+    }
+    return text.split(/\s+/).filter(Boolean);
   }
-}
+
+  function render() {
+    const text = document.getElementById('input').value;
+    let lang = document.getElementById('lang').value;
+    if (lang === 'auto') lang = detectLang(text);
+
+    const per = parseInt(document.getElementById('perCol').value, 10) || 1;
+    const words = segmentWords(text, lang);
+    const out = document.getElementById('output');
+    out.innerHTML = '';
+
+    if (!words.length) {
+      out.innerHTML = '<div class="empty">没有可显示的内容</div>';
+      return;
+    }
+
+    for (let i = 0; i < words.length; i += per) {
+      const col = document.createElement('div');
+      col.className = 'column';
+      words.slice(i, i + per).forEach(w => {
+        const d = document.createElement('div');
+        d.textContent = w;
+        col.appendChild(d);
+      });
+      out.appendChild(col);
+    }
+  }
+
+  document.getElementById('btn').addEventListener('click', render);
+  document.getElementById('input').addEventListener('input', render);
+  document.getElementById('lang').addEventListener('change', render);
+  document.getElementById('perCol').addEventListener('change', render);
 </script>
 </body>
 </html>
