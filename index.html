@@ -82,13 +82,13 @@
     position: relative;
   }
 
-  /* 从右向左排版，单词防溢出 */
+  /* 从右向左排版 */
   #output {
     display: flex;
     flex-direction: row-reverse;
     justify-content: center;
     align-items: flex-start;
-    gap: 24px;
+    gap: 20px;
     width: 100%;
     height: 100%;
     max-height: 55vh;
@@ -98,16 +98,17 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     font-size: 22px;
     line-height: 1.3;
+    /* 限制列的最大宽度，防止超长单词把屏幕撑破 */
+    max-width: 20vw; 
   }
   .column div {
-    white-space: nowrap;
-    /* 如果外文单词实在太长，强制在列内折行，不会撑爆屏幕 */
-    max-width: 80vw; 
+    text-align: center;
+    /* 允许超长单词在列内自动换行，比如一个超长单词折成几行 */
+    word-break: break-word; 
     overflow-wrap: break-word;
-    word-wrap: break-word;
   }
 
   /* 翻页控制区 */
@@ -144,13 +145,13 @@
     </select>
 
     <select id="perCol">
-      <option value="5">中文一列 5 字</option>
-      <option value="6">中文一列 6 字</option>
-      <option value="7">中文一列 7 字</option>
-      <option value="8">中文一列 8 字</option>
+      <option value="5">每列 5 个</option>
+      <option value="4">每列 4 个</option>
+      <option value="6">每列 6 个</option>
+      <option value="7">每列 7 个</option>
     </select>
 
-    <!-- 新增选项：外文是否按字母拆分 -->
+    <!-- 外文是否按字母拆分 -->
     <label>
       <input type="checkbox" id="splitLetter"> 外文按字母拆分
     </label>
@@ -173,7 +174,7 @@
   let allItems = [];
   let currentPage = 0;
   let currentLang = 'zh';
-  const COLUMNS_PER_PAGE = 4; // 每页固定显示 4 列（可在代码里改）
+  const COLUMNS_PER_PAGE = 4; // 每页固定显示 4 列
 
   function detectLang(text) {
     if (/[\u3040-\u30ff\u4e00-\u9fff]/.test(text)) return 'zh';
@@ -220,13 +221,8 @@
 
   // 渲染当前页
   function renderPage() {
-    const isSplitLetter = document.getElementById('splitLetter').checked;
-    let colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
-
-    // 【核心规则】如果是外文，且没有勾选“按字母拆分”，那么一列只能放 1 个单词
-    if (currentLang === 'en' && !isSplitLetter) {
-      colCapacity = 1; 
-    }
+    // 统一读取下拉框里的每列数量
+    const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
 
     const itemsPerPage = colCapacity * COLUMNS_PER_PAGE; // 一页总容量
     const totalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
@@ -269,11 +265,7 @@
   });
 
   document.getElementById('btnNext').addEventListener('click', () => {
-    // 翻页时重新计算，确保 totalPages 是最新的
-    const isSplitLetter = document.getElementById('splitLetter').checked;
-    let colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
-    if (currentLang === 'en' && !isSplitLetter) colCapacity = 1;
-
+    const colCapacity = parseInt(document.getElementById('perCol').value, 10) || 5;
     const totalPages = Math.ceil(allItems.length / (colCapacity * COLUMNS_PER_PAGE));
     if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
   });
