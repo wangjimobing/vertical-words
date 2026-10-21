@@ -23,17 +23,38 @@
     flex-direction: column;
     height: 100vh;
   }
+  
+  /* 文本框与上传按钮的布局 */
+  .input-area {
+    position: relative;
+    margin-bottom: 10px;
+  }
   textarea {
     width: 100%;
     height: 80px;
     padding: 10px;
+    padding-bottom: 35px; /* 给底部的上传按钮留出空间 */
     font-size: 16px;
     box-sizing: border-box;
     border-radius: 8px;
     border: 1px solid #ccc;
     resize: none;
-    margin-bottom: 10px;
   }
+  
+  /* 上传按钮伪装成文字，放在右下角 */
+  .upload-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 13px;
+    color: #007aff;
+    cursor: pointer;
+    background: #f0f0f5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    user-select: none;
+  }
+
   .controls {
     display: flex;
     gap: 8px;
@@ -47,6 +68,7 @@
     font-size: 14px;
     border-radius: 6px;
     border: 1px solid #ccc;
+    background: #fff;
   }
   button {
     background: #007aff;
@@ -144,7 +166,6 @@
     outline: none;
     background: #fff;
   }
-  /* 隐藏数字输入框自带的上下小箭头 */
   #pageInput::-webkit-outer-spin-button,
   #pageInput::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -154,7 +175,15 @@
 </head>
 <body>
 <div class="wrap">
-  <textarea id="input" placeholder="输入任意语言，例如：Hello World! 你好世界。مرحبا بالعالم"></textarea>
+  
+  <!-- 文本输入区 -->
+  <div class="input-area">
+    <textarea id="input" placeholder="输入任意语言，或上传 TXT..."></textarea>
+    <label class="upload-btn">
+      📁 上传 TXT
+      <input type="file" id="fileInput" accept=".txt" style="display: none;">
+    </label>
+  </div>
 
   <div class="controls">
     <select id="colsPerPage">
@@ -181,7 +210,7 @@
     <div id="output"></div>
   </div>
 
-  <!-- 翻页控制区（加入了输入跳转） -->
+  <!-- 翻页控制区 -->
   <div class="pagination">
     <button id="btnPrev" disabled>上一页</button>
     <div class="page-jump">
@@ -280,7 +309,6 @@
     
     let target = parseInt(document.getElementById('pageInput').value, 10);
     
-    // 容错处理：如果没输入、输入了非数字或超出范围，就修正
     if (isNaN(target) || target < 1) target = 1;
     if (target > totalPages) target = totalPages;
     
@@ -288,16 +316,34 @@
       currentPage = target - 1;
       renderPage();
     } else {
-      // 如果输入无效，重置为当前实际页码
       document.getElementById('pageInput').value = currentPage + 1;
     }
   }
 
-  // 输入防抖（300ms）：防止打字时卡顿
+  // 输入防抖
   let debounceTimer;
   document.getElementById('input').addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(updateData, 300);
+  });
+
+  // ===== 新增：读取 TXT 文件 =====
+  document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      // 将读取的内容填入输入框
+      document.getElementById('input').value = event.target.result;
+      // 立即执行拆分和渲染
+      updateData();
+    };
+    // 读取为文本，默认 UTF-8 编码
+    reader.readAsText(file, 'UTF-8');
+    
+    // 清空 value，以便下次可以重新上传同一个文件
+    e.target.value = '';
   });
 
   // 绑定其他控件事件
@@ -305,17 +351,15 @@
   document.getElementById('perCol').addEventListener('change', updateData);
   document.getElementById('splitLetter').addEventListener('change', updateData);
 
-  // 绑定输入框跳转事件
   const pageInputEl = document.getElementById('pageInput');
-  pageInputEl.addEventListener('change', jumpToPage); // 失去焦点时触发
+  pageInputEl.addEventListener('change', jumpToPage);
   pageInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       jumpToPage();
-      e.target.blur(); // 回车后收起手机键盘
+      e.target.blur();
     }
   });
 
-  // 绑定前后翻页
   document.getElementById('btnPrev').addEventListener('click', () => {
     if (currentPage > 0) { currentPage--; renderPage(); }
   });
