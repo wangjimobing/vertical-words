@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>混合语言竖排 · 标点版</title>
+<title>混合语言竖排 · 超大容量记忆版</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <style>
   body {
     margin: 0;
@@ -53,6 +54,19 @@
     user-select: none;
   }
 
+  .clear-btn {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    font-size: 13px;
+    color: #ff3b30;
+    cursor: pointer;
+    background: #f0f0f5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    user-select: none;
+  }
+
   .controls {
     display: flex;
     gap: 8px;
@@ -88,7 +102,6 @@
     height: 16px;
   }
 
-  /* 书本区域 */
   .book-container {
     flex: 1;
     background: white;
@@ -102,7 +115,6 @@
     position: relative;
   }
 
-  /* 从右向左排版 */
   #output {
     display: flex;
     flex-direction: row-reverse;
@@ -129,7 +141,6 @@
     overflow-wrap: break-word;
   }
 
-  /* 翻页控制区 */
   .pagination {
     display: flex;
     justify-content: space-between;
@@ -168,17 +179,48 @@
     -webkit-appearance: none;
     margin: 0;
   }
+  
+  #loading {
+    position: absolute;
+    background: rgba(255,255,255,0.9);
+    width: 100%;
+    height: 100%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    font-size: 16px;
+    color: #007aff;
+    font-weight: bold;
+    z-index: 10;
+  }
+  
+  /* 右下角保存提示 */
+  #saveTip {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    font-size: 12px;
+    color: #888;
+    background: rgba(255,255,255,0.8);
+    padding: 4px 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 100;
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   
   <div class="input-area">
-    <textarea id="input" placeholder="输入任意语言，或上传 TXT..."></textarea>
+    <textarea id="input" placeholder="输入文字，或上传 TXT / 文字版 PDF..."></textarea>
     <label class="upload-btn">
-      📁 上传 TXT
-      <input type="file" id="fileInput" accept=".txt" style="display: none;">
+      📁 上传文件
+      <input type="file" id="fileInput" accept=".txt,.pdf" style="display: none;">
     </label>
+    <div class="clear-btn" id="clearBtn">🗑️ 清空</div>
   </div>
 
   <div class="controls">
@@ -203,6 +245,7 @@
   </div>
 
   <div class="book-container">
+    <div id="loading">文件解析中，请稍候...</div>
     <div id="output"></div>
   </div>
 
@@ -216,34 +259,107 @@
   </div>
 </div>
 
+<div id="saveTip">已自动保存</div>
+
 <script>
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+  }
+
   let allItems = [];
   let currentPage = 0;
 
-  // 混合语言分词逻辑（已恢复标点）
+  // ==========================================
+  // 核心重构：IndexedDB 大容量存储模块
+  // ==========================================
+  const DB_NAME = 'VerticalReaderDB';
+  const STORE_NAME = 'stateStore';
+  let db = null;
+
+  function initDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onerror = (e) => reject(e);
+      request.onsuccess = (e) => {
+        db = e.target.result;
+        resolve();
+      };
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+    });
+  }
+
+  function saveState() {
+    if (!db) return;
+    try {
+      const state = {
+        text: document.getElementById('input').value,
+        page: currentPage,
+        cols: document.getElementById('colsPerPage').value,
+        perCol: document.getElementById('perCol').value,
+        split: document.getElementById('splitLetter').checked
+      };
+      
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(state, 'current_state');
+      
+      // 显示保存提示
+      const tip = document.getElementById('saveTip');
+      tip.style.opacity = '1';
+      clearTimeout(tip.timeout);
+      tip.timeout = setTimeout(() => { tip.style.opacity = '0'; }, 1500);
+
+    } catch (e) {
+      console.warn("保存失败", e);
+    }
+  }
+
+  function loadState() {
+    if (!db) return;
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.get('current_state');
+
+    request.onsuccess = (e) => {
+      const state = e.target.result;
+      if (state) {
+        if (state.text) document.getElementById('input').value = state.text;
+        if (state.cols) document.getElementById('colsPerPage').value = state.cols;
+        if (state.perCol) document.getElementById('perCol').value = state.perCol;
+        if (state.split) document.getElementById('splitLetter').checked = state.split;
+
+        if (state.text) {
+          allItems = segmentText(state.text);
+          currentPage = state.page || 0;
+          renderPage();
+        }
+      }
+    };
+  }
+  // ==========================================
+
   function segmentText(text) {
     const isSplitLetter = document.getElementById('splitLetter').checked;
 
     if (isSplitLetter) {
-      // 强制拆模式：保留所有非空白的字符（包括字母、单字、标点）
       return Array.from(text).filter(ch => !/\s/.test(ch));
     }
 
     let items = [];
-
     if (typeof Intl !== 'undefined' && Intl.Segmenter) {
       try {
         const seg = new Intl.Segmenter('und', { granularity: 'word' });
         for (const s of seg.segment(text)) {
           const chunk = s.segment;
-          // 只跳过纯粹的空白字符（如空格、换行）
           if (chunk.trim() === '') continue;
-          
-          // 如果是纯中文/日文/韩文，拆成单字
           if (/^[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]+$/.test(chunk)) {
             items.push(...Array.from(chunk));
           } else {
-            // 英文单词、标点等，整体保留
             items.push(chunk);
           }
         }
@@ -251,7 +367,6 @@
       } catch (e) {}
     }
 
-    // 兜底正则：匹配汉字/日韩/单词 或者 标点符号
     const regex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]|[a-zA-ZÀ-ÿ0-9]+|[^\s\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\w]/g;
     return (text.match(regex) || []).filter(Boolean);
   }
@@ -259,8 +374,9 @@
   function updateData() {
     const text = document.getElementById('input').value;
     allItems = segmentText(text);
-    currentPage = 0;
+    currentPage = 0; 
     renderPage();
+    saveState();
   }
 
   function renderPage() {
@@ -297,6 +413,8 @@
     
     document.getElementById('btnPrev').disabled = currentPage === 0;
     document.getElementById('btnNext').disabled = currentPage === totalPages - 1;
+    
+    saveState(); 
   }
 
   function jumpToPage() {
@@ -319,32 +437,76 @@
   let debounceTimer;
   document.getElementById('input').addEventListener('input', () => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(updateData, 300);
+    debounceTimer = setTimeout(updateData, 800); // 稍微延长防抖，避免频繁写大文本到数据库
   });
 
-  document.getElementById('fileInput').addEventListener('change', function(e) {
+  document.getElementById('fileInput').addEventListener('change', async function(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(event) {
-      document.getElementById('input').value = event.target.result;
-      updateData();
-    };
-    reader.readAsText(file, 'UTF-8');
+
+    const loading = document.getElementById('loading');
+    loading.style.display = 'flex';
+
+    if (file.name.toLowerCase().endsWith('.txt')) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        document.getElementById('input').value = event.target.result;
+        updateData();
+        loading.style.display = 'none';
+      };
+      reader.readAsText(file, 'UTF-8');
+    } 
+    else if (file.name.toLowerCase().endsWith('.pdf')) {
+      if (typeof pdfjsLib === 'undefined') {
+        alert('PDF 解析库未加载成功，请检查网络后刷新重试。');
+        loading.style.display = 'none';
+        return;
+      }
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+        }
+        document.getElementById('input').value = fullText.trim();
+        updateData();
+      } catch (error) {
+        alert('PDF 解析失败。');
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
     e.target.value = '';
   });
 
-  document.getElementById('colsPerPage').addEventListener('change', updateData);
-  document.getElementById('perCol').addEventListener('change', updateData);
-  document.getElementById('splitLetter').addEventListener('change', updateData);
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    if (confirm('确定要清空所有文字并重新开始吗？')) {
+      document.getElementById('input').value = '';
+      
+      // 清空数据库
+      if (db) {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete('current_state');
+      }
+      
+      allItems = [];
+      currentPage = 0;
+      renderPage();
+    }
+  });
+
+  const updateSettings = () => { updateData(); saveState(); };
+  document.getElementById('colsPerPage').addEventListener('change', updateSettings);
+  document.getElementById('perCol').addEventListener('change', updateSettings);
+  document.getElementById('splitLetter').addEventListener('change', updateSettings);
 
   const pageInputEl = document.getElementById('pageInput');
   pageInputEl.addEventListener('change', jumpToPage);
   pageInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      jumpToPage();
-      e.target.blur();
-    }
+    if (e.key === 'Enter') { jumpToPage(); e.target.blur(); }
   });
 
   document.getElementById('btnPrev').addEventListener('click', () => {
@@ -357,6 +519,15 @@
     const totalPages = Math.ceil(allItems.length / (colCapacity * colsPerPage));
     if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
   });
+
+  // 初始化数据库并加载数据
+  initDB().then(() => {
+    loadState();
+  }).catch(err => {
+    console.error("数据库初始化失败", err);
+    alert("本地存储初始化失败，可能是处于无痕浏览模式。将无法保存进度。");
+  });
+
 </script>
 </body>
 </html>
